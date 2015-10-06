@@ -1,0 +1,17 @@
+{
+  "name": "automeetic",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "finalhandler": "^0.4.0",
+    "serve-static": "^1.10.0",
+    "wpcom": "^4.7.0",
+    "wpcom-browser-auth": "^1.0.0"
+  }
+}
