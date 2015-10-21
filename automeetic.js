@@ -1,125 +1,210 @@
+(function() {
 
 if (!window.console) {
     window.console = { log: function() {} };
 }
 
-var Automeetic = {
+var Modal = ReactBootstrap.Modal;
+
+var EventRow = React.createClass({
+    getInitialState: function() {
+        return {
+            showAttendees: false,
+            attendees: false
+        };
+    },
+    render: function() {
+        var event = this.props.data;
+        var info = event.title.split(': ');
+        var geo = event.geo || {};
+        var geo_link = geo.address || "Unknown";
+        if (geo.latitude && geo.longitude) {
+            geo_link = <a href={'https://www.google.com/maps/?q=' + geo.latitude + ',' + geo.longitude} target="_blank">{geo_link}</a>;
+        }
+        var modal;
+        if (this.state.showAttendees) {
+            var attendees = <span className="no-attendees-warning">No attendees yet...</span>;
+            if (this.state.attendees && this.state.attendees.length) {
+                attendees = this.state.attendees.map(function(attendee) {
+                    return (
+                        <a key={attendee.ID} href={attendee.URL} target="_blank">
+                            <img src={attendee.avatar_URL} width="32" height="32" />
+                            {attendee.name}
+                        </a>
+                    );
+                });
+                attendees = <div className="attendee-list list-group">{attendees}</div>
+            }
+            modal = (
+                <Modal show={this.state.showAttendees} onHide={this.closeAttendees}>
+                    <Modal.Header closeButton>
+                        <Modal.Title><span className="glyphicon glyphicon-user"></span> {info[1]} Attendees</Modal.Title>
+                    </Modal.Header>
+                    <Modal.Body>
+                        {attendees}
+                    </Modal.Body>
+                    <Modal.Footer>
+                        Attend?
+                    </Modal.Footer>
+                </Modal>
+            );
+        }
+        return (
+            <tr className={event.i_like ? 'success' : ''}>
+                <td>{event.ID}</td>
+                <td>{info[0]}</td>
+                <td><a href={event.URL}>{info[1]}</a></td>
+                <td>{geo_link}</td>
+                <td dangerouslySetInnerHTML={{__html: event.excerpt}}></td>
+                <td>
+                    <a href="#" onClick={this.handleAttendeesClick}>{event.like_count}</a>
+                    {modal}
+                </td>
+                <td><AttendingButton id={event.ID} attending={event.i_like} onAttendChange={this.onAttendChange} /></td>
+            </tr>
+        );
+    },
+    handleAttendeesClick: function(e) {
+        e.preventDefault();
+        this.setState({showAttendees: true});
+        if (this.state.attendees === false) {
+            Automeetic.site.post(this.props.data.ID).likesList({}, function(err, response) {
+                this.setState({
+                    attendees: response.likes,
+                    attendees_found: response.found
+                });
+            }.bind(this));
+            this.setState({attendees: []});
+        }
+    },
+    closeAttendees: function(e) {
+        this.setState({showAttendees: false});
+    },
+    onAttendChange: function(attending, attending_count) {
+        this.props.data.i_like = attending;
+        this.props.data.like_count = attending_count;
+        this.forceUpdate();
+    }
+});
+
+var AttendingButton = React.createClass({
+    getInitialState: function() {
+        return {
+            attending: this.props.attending,
+            working: false
+        }
+    },
+    handleClick: function(e) {
+        e.preventDefault();
+        if (e.button !== 0 || this.state.working) {
+            return;
+        }
+        var attending = this.state.attending;
+        Automeetic.site.post(this.props.id).like()[attending ? 'del' : 'add'](function(err, data) {
+            console.log('like change', data);
+            if (err) throw err;
+            this.setState({
+                attending: !attending,
+                working: false
+            });
+            if (this.props.onAttendChange) {
+                this.props.onAttendChange(!attending, data.like_count);
+            }
+        }.bind(this));
+        this.setState({working: true});
+    },
+    render: function() {
+        var attrs = {
+            className: 'btn btn-' + (this.state.attending ? 'danger' : 'primary'),
+            title: Automeetic.me.ID ? '' : "You need to log in to sign up for an event",
+            disabled: Automeetic.me.ID ? undefined : true,
+            onClick: this.handleClick
+        }
+        return (<button {...attrs}>{this.state.attending ? 'Cancel' : 'Attend'}</button>);
+    }
+});
+
+window.EventList = React.createClass({
+    fetchEvents: function() {
+        Automeetic.site.postsList({}, function(err, response) {
+            if (err) throw err;
+            this.setState({
+                events: response.posts,
+                found: response.found
+            });
+        }.bind(this));
+    },
+    getInitialState: function() {
+        return {events: []};
+    },
+    componentDidMount: function() {
+        this.fetchEvents();
+    },
+    render: function() {
+        var events = this.state.events.map(function(event) {
+            return <EventRow key={event.ID} data={event} />;
+        });
+        return (
+            <table id="events" className="table table-striped">
+            <thead>
+                <tr><th>ID</th><th>Date</th><th>Title</th><th>Location</th><th>Description</th><th>Attendees</th><th>Action</th></tr>
+            </thead>
+            <tbody>{events}</tbody>
+            </table>
+        );
+    }
+});
+
+window.LoginButton = React.createClass({
+    getInitialState: function() {
+        return {
+            loggedin: false
+        };
+    },
+    handleLogoutClick: function(e) {
+        e.preventDefault();
+        if (e.button === 0) {
+            localStorage.removeItem('automeetic_access');
+            location.reload();
+        }
+    },
+    handleLoginClick: function(e) {
+        e.preventDefault();
+        if (e.button === 0) {
+            wpcomBrowserAuth.redirect(Config.client_id);
+        }
+    },
+    render: function() {
+        if (this.state.loggedin) {
+            return (
+                <li id="logout"><a href="#" onClick={this.handleLogoutClick}><span className="user">{Automeetic.me.display_name || "Logout"}</span> <img src={Automeetic.me.avatar_URL || "https://s.w.org/about/images/logos/wordpress-logo-32-blue.png"} className="avatar" /></a></li>
+            );
+        }
+        return (
+            <li id="login"><a href="#" title="Connect with WordPress.com" onClick={this.handleLoginClick}><span>Login</span> <img src="https://s.w.org/about/images/logos/wordpress-logo-32-blue.png" className="avatar" /></a></li>
+        );
+    }
+});
+
+window.Automeetic = {
     me: {},
 
     init: function() {
         this.do_authentication();
         this.setup_api();
-        this.fetch_events();
+
+        this.render();
     },
 
-    fetch_events: function() {
-        this.site.postsList({}, function(err, posts) {
-            if (err) throw err;
-
-            var t = $('#events');
-            if (posts.found > 0) {
-                posts.posts.forEach(function(post) {
-                    t.append(this.render_event_row(post));
-                }.bind(this));
-                if (posts.found > posts.posts.length) {
-                    // TODO
-                    t.after("More...");
-                }
-            } else {
-                t.replaceWith("No events found");
-            }
-        }.bind(this));
-    },
-
-    render_event_row: function(post) {
-        console.log('post', post);
-        var info = post.title.split(': ');
-        var geo = post.geo || {};
-        var geo_link = geo.address || "Unknown";
-        if (geo.latitude && geo.longitude) {
-            geo_link = $('<a href="https://www.google.com/maps/?q=' + geo.latitude + ',' + geo.longitude + '" target="_blank">').text(geo_link);
-        }
-
-        var row = $('<tr>')
-            .append($('<td>').text(post.ID))
-            .append($('<td>').text(info[0]))
-            .append($('<td>').append($('<a>', {href: post.URL, text: info[1]})))
-            .append($('<td>').append(geo_link))
-            .append($('<td>').html(post.excerpt))
-            .append($('<td class="attendees">').append($('<a href="#">').text(post.like_count).click(function(e) {
-                e.preventDefault();
-                this.display_likes_for_post(post);
-            }.bind(this))))
-            ;
-        var attend_button = $('<button class="btn">').on('click', function(e) {
-            e.preventDefault();
-            if (e.which !== 1) {
-                return;
-            }
-            if (attend_button.hasClass('working')) {
-                return;
-            }
-            attend_button.addClass('working');
-            if (attend_button.hasClass('btn-danger')) {
-                this.site.post(post.ID).like().del(function(err, data) {
-                    console.log('like del', data);
-                    if (err) throw err;
-                    attend_button.removeClass('btn-danger working').addClass('btn-primary').text("Attend")
-                        .closest('tr').removeClass('success')
-                        .find('.attendees a').text(data.like_count);
-                });
-            } else {
-                this.site.post(post.ID).like().add(function(err, data) {
-                    console.log('like add', data);
-                    if (err) throw err;
-                    attend_button.removeClass('btn-primary working').addClass('btn-danger').text("Cancel")
-                        .closest('tr').addClass('success')
-                        .find('.attendees a').text(data.like_count);
-                });
-            }
-        }.bind(this));
-        if (!this.me.ID) {
-            attend_button.prop('disabled', true).attr('title', "You need to log in to sign up for an event");
-        }
-        if (post.i_like) {
-            // attending
-            row.addClass('success');
-            attend_button.text('Cancel').addClass('btn-danger');
-        } else {
-            attend_button.text('Attend').addClass('btn-primary');
-        }
-        row.append($('<td>').append(attend_button));
-        return row;
-    },
-
-    display_likes_for_post: function(post) {
-        $('#attendeesModal')
-            .find('.event-name').text(post.title.split(': ')[1]).end()
-            .modal();
-        this.site.post(post.ID).likesList({}, function(err, likes) {
-            console.log('likes', likes);
-            if (likes.found == 0) {
-                $('#attendeesModal')
-                    .find('.attendee-list').hide().end()
-                    .find('.no-attendees-warning').show().end()
-                    ;
-                return;
-            }
-            var list = $('#attendeesModal')
-                .find('.no-attendees-warning').hide().end()
-                .find('.attendee-list').empty().show();
-            for (var i = 0; i < likes.likes.length; i++) {
-                var like = likes.likes[i];
-                var row = $('<a>', {href: like.URL, target:"_blank"});
-                row.append($('<img>', {src: like.avatar_URL, width:32, height:32}));
-                row.append(like.name);
-                list.append(row);
-            }
-            if (likes.found > likes.likes.length) {
-                // TODO
-                t.after("More...");
-            }
-        });
+    render: function() {
+        this.event_list = ReactDOM.render(
+            <EventList />,
+            document.getElementById('automeetic')
+        );
+        this.login_button = ReactDOM.render(
+            <LoginButton />,
+            document.getElementById('loginbar')
+        );
     },
 
     do_authentication: function() {
@@ -150,43 +235,21 @@ var Automeetic = {
                 if (err) {
                     if (err.statusCode === 403) {
                         localStorage.removeItem('automeetic_access');
-                        this.display_login_button(false);
+                        this.login_button.setState({
+                            loggedin: false
+                        });
                     }
                     throw err;
                 }
                 this.me = me;
-                this.display_login_button(true);
+                this.login_button.setState({
+                    loggedin: true
+                });
+                this.event_list.forceUpdate();
                 console.log('me', me);
             }.bind(this));
         }
-
-        this.display_login_button(access.access_token);
     },
-
-    display_login_button: function(loggedin) {
-        if (loggedin) {
-            // remove Connect button
-            $('#login').hide();
-            $('#logout').show().on('click', function(e) {
-                e.preventDefault();
-                if (e.which === 1) {
-                    localStorage.removeItem('automeetic_access');
-                    location.reload();
-                }
-            });
-            if (this.me.avatar_URL) {
-                $('#logout img').attr('src', this.me.avatar_URL).addClass('avatar');
-                $('#logout span').text(this.me.display_name);
-            }
-        } else {
-            // called when the WP.com "Connect" button is clicked.
-            $('#login').on('click', function(e) {
-                e.preventDefault();
-                if (e.which === 1) {
-                    wpcomBrowserAuth.redirect(Config.client_id);
-                }
-            });
-            $('#logout').hide();
-        }
-    }
 }
+
+})();

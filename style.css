@@ -2,10 +2,7 @@ body {
   padding-top: 50px;
 }
 
-#logout {
-    display: none;
-}
-#logout:hover span::before {
+#logout:hover span.user::before {
     content:'Logout ';
 }
 nav img.avatar {
